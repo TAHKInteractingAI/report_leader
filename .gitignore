@@ -32,3 +32,7 @@ chromedriver*
 .DS_Store
 .idea/
 .vscode/
+
+# repo
+reference/
+service_account.json

@@ -1,0 +1,76 @@
+name: Report Leader Bot
+
+on:
+  # Cho phép kích hoạt thủ công từ giao diện GitHub Actions
+  workflow_dispatch:
+  # Cho phép kích hoạt qua webhook từ bên ngoài (cron-job.org) để đảm bảo chính xác từng giây
+  repository_dispatch:
+    types: [run-report-leader]
+
+env:
+  TZ: Asia/Ho_Chi_Minh
+
+jobs:
+  send-report-leader:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kiểm tra thời gian kích hoạt CI (Asia/Ho_Chi_Minh)
+        run: |
+          sudo timedatectl set-timezone Asia/Ho_Chi_Minh || true
+          TRIGGER_HCM=$(TZ=Asia/Ho_Chi_Minh date '+%Y-%m-%d %H:%M:%S')
+          TRIGGER_UTC=$(TZ=UTC date '+%Y-%m-%d %H:%M:%S')
+          echo "CI_TRIGGER_TIME=${TRIGGER_HCM}" >> $GITHUB_ENV
+          echo "========================================================"
+          echo "⏰ THỜI GIAN KÍCH HOẠT REPORT LEADER"
+          echo " - Sự kiện        : ${{ github.event_name }}"
+          echo " - Giờ UTC        : ${TRIGGER_UTC} UTC"
+          echo " - Giờ Việt Nam   : ${TRIGGER_HCM} (Asia/Ho_Chi_Minh)"
+          echo "========================================================"
+          {
+            echo "### ⏰ Thông tin chạy Report Leader Bot"
+            echo "- **Sự kiện kích hoạt:** \`${{ github.event_name }}\`"
+            echo "- **Giờ Việt Nam (UTC+7):** \`${TRIGGER_HCM}\`"
+            echo "- **Giờ chuẩn UTC:** \`${TRIGGER_UTC}\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Nâng cấp Google Chrome lên bản mới nhất
+        run: |
+          sudo apt-get update
+          sudo apt-get --only-upgrade install -y google-chrome-stable || true
+          google-chrome --version
+
+      - name: Cài đặt các thư viện phụ thuộc
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Thực thi Report Leader Bot
+        env:
+          TZ: Asia/Ho_Chi_Minh
+          CI_TRIGGER_TIME: ${{ env.CI_TRIGGER_TIME }}
+          GCP_SA_KEY: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON || secrets.GOOGLE_CREDENTIALS }}
+          TEAMS_EMAIL: ${{ secrets.TEAMS_EMAIL }}
+          TEAMS_PASSWORD: ${{ secrets.TEAMS_PASSWORD }}
+        run: |
+          # Chờ ngẫu nhiên 3-10s để tránh nghẽn tải đúng đầu giờ
+          sleep $((RANDOM % 7 + 3))
+          python main.py
+
+      - name: Lưu trữ ảnh chụp màn hình (Debug artifacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: teams-screenshots
+          path: ./*.png
+          retention-days: 3
