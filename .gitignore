@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment and Secrets
+.env
+*.json
+!package*.json
+gcp-credentials.json*
+credentials.json*
+
+# Logs & Screenshots
+*.log
+*.png
+screenshot*.png
+after_*.png
+login_*.png
+send_message_*.png
+
+# Chrome & Drivers
+chromedriver*
+.local-chromium/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
