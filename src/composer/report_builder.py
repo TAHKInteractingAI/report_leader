@@ -1,382 +1,18 @@
+"""
+Builder for composing the structured report tables and text formats.
+"""
 import re
 from typing import List, Dict, Any, Optional
-from .config import REPORT_SECTIONS
-
-
-def clean_text(val: Any) -> str:
-    """Loại bỏ ký tự khoảng trắng thừa và ký tự non-breaking space."""
-    if val is None:
-        return ""
-    text = str(val).replace("\xa0", " ").strip()
-    return text
-
-
-def normalize_text(text: str) -> str:
-    """
-    Chuẩn hóa chuỗi văn bản để so khớp tiêu đề không phân biệt hoa thường,
-    dấu cách và dấu hai chấm.
-    """
-    text = clean_text(text).lower()
-    text = re.sub(r"[\s_:\-\.,]+", " ", text).strip()
-    return text
-
-
-def parse_template_sheet(rows: List[List[Any]]) -> str:
-    """
-    Đọc toàn bộ nội dung trong sheet template và ghép thành đoạn văn bản.
-    """
-    if not rows:
-        return ""
-
-    lines = []
-    for row in rows:
-        # Lọc các ô có nội dung trong dòng
-        row_cells = [clean_text(c) for c in row if clean_text(c)]
-        if row_cells:
-            # Ghép các ô trên cùng dòng cách nhau bởi khoảng trắng hoặc tab
-            lines.append(" ".join(row_cells))
-        else:
-            # Giữ dòng trống để ngăn cách đoạn nếu có
-            if lines and lines[-1] != "":
-                lines.append("")
-
-    return "\n".join(lines).strip()
-
-
-DOC_LINKS = {
-    "xu_ly_phan_hoi": "https://docs.google.com/document/d/1eptdDdXD1e1Tz2xzR0kKgB_uNeAurwhKHB8b-1yUf9I/edit?tab=t.rteda6ijpm46",
-    "nop_jobs": "https://docs.google.com/spreadsheets/d/1vUcKAbDazlC_vFSjzty02Fdugu4Nw_jZsEG2k_wyxXY/edit?gid=1653216804#gid=1653216804",
-    "willing_job": "https://docs.google.com/document/d/1v15KFMxfk2v3eYyQOiJbL4sCE6RQa3Nuses_cxLnkzM/edit?tab=t.atun0hlffezr#heading=h.gpe024pkb62i",
-    "interview": "https://docs.google.com/document/d/1phoQJ7SWn8gEGsXq79afmuK8H5JCdsyzaPn_-H4PYBg/edit?tab=t.epjtewsrdzv4",
-    "feedback_job": "https://docs.google.com/document/d/1phoQJ7SWn8gEGsXq79afmuK8H5JCdsyzaPn_-H4PYBg/edit?tab=t.43t5jivli07x",
-    "ah": "https://docs.google.com/document/d/1JrZHfVV9GHnETvcLrN0GLvHKhp8O3N0efkV49wXyOjY/edit?tab=t.0#heading=h.cr5o8ciz9sfm",
-    "au": "https://docs.google.com/document/d/1muhs3g6cpgDTXyUtC9902AfjwYXM_M_Lhi6wJxyCEPo/edit?tab=t.a8v2tuy7i94k",
-    "sam_foundation": "https://docs.google.com/document/d/1uTXqOXJ7I8kiYz-0d6YuFLNBJUxwyr4gfRN_rHo1V4c/edit?usp=sharing",
-    "niw_citations": "https://docs.google.com/spreadsheets/d/1tV1h-pNtGBgq639ky7cdBjc3CTfoeJEKIakOjORePEM/edit?gid=1346338716#gid=1346338716",
-    "niw_notes": "https://docs.google.com/document/d/1__q1kkUZkmpXi1E5dDkbwzfir-HKTCQSYEU4Edz38k0/edit?tab=t.boxu2wiwp4xz#heading=h.j84em85ufx8",
-    "niw_linkedin": "https://docs.google.com/spreadsheets/d/163Ye0HpfriaBs7nPWpKZC5mY-nHgcZdIQh2sJMoDIuQ/edit?gid=1498442053#gid=1498442053",
-    "niw_case": "https://docs.google.com/document/d/1__q1kkUZkmpXi1E5dDkbwzfir-HKTCQSYEU4Edz38k0/edit?tab=t.boxu2wiwp4xz"
-}
-
-LINK_CLS = 'class="fui-Link ___1q1shib f2hkw1w f3rmtva f1ewtqcl fyind8e f1k6fduh f1w7gpdv fk6fouc fjoy568 figsok6 f1s184ao f1mk8lai fnbmjn9 f1o700av f13mvf36 f1cmlufx f9n3di6 f1ids18y f1tx3yz7 f1deo86v f1eh06m1 f1iescvh fhgqx19 f1olyrje f1p93eir f1nev41a f1h8hb77 f1lqvz6u f10aw75t fsle3fq f17ae5zn"'
-LINK_ATTRS = f'{LINK_CLS} rel="noopener noreferrer" target="_blank" tabindex="0" data-testid="atp-safelink"'
-BLUE_STYLE = 'style="color: rgb(154, 184, 255); font-size: inherit;" data-original-highlight-color="rgb(30, 83, 163)"'
-ORANGE_STYLE = 'style="color: rgb(254, 131, 93); font-size: inherit;" data-original-highlight-color="rgb(205, 89, 55)"'
-
-
-def compose_template_message(template_rows: List[List[Any]]) -> tuple[str, str]:
-    """
-    Ráp nội dung từ sheet 'template' theo chuẩn cấu trúc 100% của Ray (nhóm gbBOSS):
-    Mỗi hàng là một dòng trong bảng Table 0 (data-is-focusable="true").
-    """
-    if not template_rows:
-        return "", ""
-
-    t0_trs = []
-    text_lines = []
-    for r in template_rows:
-        row_txt = " ".join(clean_text(c) for c in r if clean_text(c))
-        if not row_txt:
-            t0_trs.append("<tr><td>&nbsp;</td></tr>")
-            text_lines.append("")
-            continue
-
-        text_lines.append(row_txt)
-        parts = []
-        for line in row_txt.split("\n"):
-            line_str = (
-                line.strip()
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            line_str = re.sub(r'(https?://[^\s<]+)', f'<a aria-label="Link \\1" href="\\1" {LINK_ATTRS}>\\1</a>', line_str)
-            if line_str:
-                parts.append(f'<span style="font-size: inherit;">{line_str}</span>')
-        inner = "<br>".join(parts)
-        t0_trs.append(f"<tr><td>{inner}</td></tr>")
-
-    html_template = f'<table data-is-focusable="true"><tbody>{"".join(t0_trs)}</tbody></table>'
-    text_template = "\n".join(text_lines)
-
-    return html_template, text_template
-
-
-def _parse_report_dashboard(rows: List[List[Any]]) -> Dict[str, str]:
-    """
-    Trích xuất chính xác 8 thẻ dữ liệu từ Sheet 'report' (Dashboard đa bảng):
-      1. Tổng thể: Ô J25 và các hàng cuối
-      2. 10% Business: Hàng 1 - 9
-      3. 80%+ job Cali: Hàng 11 - 19 (Cột 0 - 9)
-      4. TTS /Volunteer: Hàng 11 - 16 (Cột 10 - 18)
-      5. NIW: Hàng 21 - 25
-      6. Xoắn nện: Tiến độ xử lý case Chen - WeGreen & các case Xoắn/Nện
-      7. TAHK Foundation: Hàng 27 - 30
-      8. Đăng bài: Danh sách link Threads
-    """
-    def cell(r: int, c: int) -> str:
-        if 0 <= r < len(rows) and 0 <= c < len(rows[r]):
-            return clean_text(rows[r][c])
-        return ""
-
-    results: Dict[str, str] = {sec: "" for sec in REPORT_SECTIONS}
-
-    # 1. TỔNG THỂ
-    tt_items = []
-    for r in range(len(rows)):
-        for c in range(len(rows[r])):
-            v = cell(r, c)
-            if v.lower().startswith("tổng thể:") and len(v) > 20:
-                tt_items.append(v.replace("Tổng thể:", "").replace("tổng thể:", "").strip())
-
-    for r in range(len(rows)):
-        if cell(r, 0).lower() == "tổng thể":
-            for sub_r in range(r + 1, len(rows)):
-                line_cells = [cell(sub_r, c) for c in range(10) if cell(sub_r, c)]
-                if line_cells:
-                    tt_items.append(" - " + " ".join(line_cells).lstrip("- "))
-            break
-    results["Tổng thể"] = "\n\n".join(tt_items)
-
-    # 2. 10% BUSINESS
-    b_lines = []
-    r_biz = -1
-    for r in range(len(rows)):
-        if "10% business" in cell(r, 0).lower():
-            r_biz = r
-            break
-    if r_biz != -1:
-        for r in range(r_biz + 1, min(r_biz + 10, len(rows))):
-            task = cell(r, 0)
-            if not task or "80%+" in task:
-                break
-            if "xử lý các phản hồi" in task.lower():
-                fb = cell(r, 1)
-                if fb:
-                    b_lines.append(f"{task}:\n{fb}")
-            elif "connect linkedin" in task.lower():
-                sum_email = cell(r, 5) or "2995"
-                b_lines.append(f"{task}: 20 | Sum email gửi báo giá: {sum_email} | Sum gửi linkedin: 0")
-            elif "gửi e-mail báo giá issale" in task.lower() and "12-mlls" not in task.lower():
-                b_lines.append(f"{task}: Debt (500), Fund (500), Internship (299), Headhunt (299), Volunteer (299)")
-            else:
-                vals = [cell(r, c) for c in range(1, 15) if cell(r, c)]
-                if vals and not all(v == "0" for v in vals):
-                    b_lines.append(f"{task}: " + " | ".join(vals))
-                elif not vals:
-                    b_lines.append(f"{task}: (Đang cập nhật)")
-    results["10% Business (50% direct và MLL)"] = "\n".join(b_lines)
-
-    # 3. 80%+ JOB CALI
-    job_lines = []
-    r_job = -1
-    for r in range(len(rows)):
-        if "80%+ job" in cell(r, 0).lower():
-            r_job = r
-            break
-    if r_job != -1:
-        r_nop = r_job + 1
-        job_lines.append(
-            f"- Nộp Jobs: Manager ({cell(r_nop, 2)}) | Dưới.M ({cell(r_nop, 3)}) | "
-            f"200+ ({cell(r_nop, 5)}) | 150+ ({cell(r_nop, 6)}) | SUM: {cell(r_nop, 7)} | Chưa apply: {cell(r_nop, 8)}"
-        )
-        r_will = r_job + 2
-        job_lines.append(
-            f"- Willing job: Linkedin ({cell(r_will, 2)}) | Email ({cell(r_will, 4)}) | "
-            f"Push email ({cell(r_will, 6)}) | Push Linkedin ({cell(r_will, 8)})"
-        )
-        for sub_r in range(r_job + 3, min(r_job + 10, len(rows))):
-            if "trả lời email" in cell(sub_r, 0).lower():
-                job_lines.append(f"{cell(sub_r, 0)}: {cell(sub_r, 1)}")
-    results["80%+ job Cali,US: $150k trở lên"] = "\n".join(job_lines)
-
-    # 4. TTS / VOLUNTEER
-    tts_lines = []
-    c_tts = -1
-    r_tts_head = -1
-    for r in range(len(rows)):
-        for c in range(len(rows[r])):
-            if "tts /volunteer" in cell(r, c).lower() and c > 0:
-                c_tts = c
-                r_tts_head = r
-                break
-        if c_tts != -1:
-            break
-
-    if c_tts != -1:
-        for r in range(r_tts_head + 1, min(r_tts_head + 6, len(rows))):
-            team_name = cell(r, c_tts)
-            if not team_name or "đăng bài" in team_name.lower():
-                break
-            sang = cell(r, c_tts + 1) or "0"
-            chieu = cell(r, c_tts + 2) or "0"
-            toi = cell(r, c_tts + 3) or "0"
-            tot_intern = cell(r, c_tts + 6)
-            tot_hours = cell(r, c_tts + 7)
-            info = f"- {team_name}: Sáng ({sang}) | Chiều ({chieu}) | Tối ({toi})"
-            if tot_intern:
-                info += f" | Tổng intern: {tot_intern}"
-            if tot_hours:
-                info += f" | Tổng giờ làm: {tot_hours}"
-            tts_lines.append(info)
-    results["TTS /Volunteer"] = "\n".join(tts_lines)
-
-    # 5. NIW
-    niw_lines = []
-    r_niw = -1
-    for r in range(len(rows)):
-        if "niw:" in cell(r, 0).lower():
-            r_niw = r
-            break
-    if r_niw != -1:
-        niw_lines.append(
-            f"- Linkedin: Connect ({cell(r_niw + 1, 2)}) | Reference ({cell(r_niw + 1, 4)}) | Push ref ({cell(r_niw + 1, 6)})"
-        )
-        for sub_r in range(r_niw + 1, min(r_niw + 6, len(rows))):
-            t = cell(sub_r, 0)
-            if "hồ sơ chen" in t.lower():
-                niw_lines.append(f"{t}:\n{cell(sub_r, 1)}")
-    results["NIW:  Citations for papers NIW's note"] = "\n".join(niw_lines)
-
-    # 6. XOẮN NỆN
-    results["Xoắn nện"] = "Tiến độ hồ sơ Chen - WeGreen & các case Xoắn/Nện đang bám sát xử lý theo bảng NIW."
-
-    # 7. TAHK FOUNDATION
-    tahk_lines = []
-    r_tahk = -1
-    for r in range(len(rows)):
-        if "tahk foundation" in cell(r, 0).lower():
-            r_tahk = r
-            break
-    if r_tahk != -1:
-        orient = cell(r_tahk, 7) or cell(r_tahk, 8)
-        if orient:
-            tahk_lines.append(f"- Định hướng: {orient}")
-        fund_txt = cell(r_tahk + 1, 0)
-        clean_fund = fund_txt.replace("- ", "").strip()
-        if clean_fund:
-            tahk_lines.append(f"- Funding & Charity: {clean_fund}")
-        tahk_lines.append("- Xoắn/Nện tìm donate funding: Email, Linkedin (0)")
-        tahk_lines.append("- Post tag Funding TAHK F: Linkedin, Twitter")
-    results["TAHK Foundation"] = "\n".join(tahk_lines)
-
-    # 8. ĐĂNG BÀI (Tự động lọc trùng link)
-    seen_urls = set()
-    links = []
-    for r in range(len(rows)):
-        for c in range(len(rows[r])):
-            v = cell(r, c)
-            if "threads.com" in v:
-                clean_url = v.strip()
-                if clean_url not in seen_urls:
-                    seen_urls.add(clean_url)
-                    links.append(f"- {clean_url}")
-    results["Đăng bài:"] = "\n".join(links)
-
-    return results
-
-
-def parse_report_sheet(rows: List[List[Any]]) -> Dict[str, str]:
-    """
-    Phân tích sheet report để trích xuất nội dung cho 8 mục yêu cầu.
-    Tự động nhận diện nếu sheet ở định dạng Dashboard nhiều bảng (chuẩn thực tế của Report Leader),
-    hoặc bố cục dòng/cột thông thường.
-    """
-    results: Dict[str, str] = {sec: "" for sec in REPORT_SECTIONS}
-    if not rows:
-        return results
-
-    # Kiểm tra xem sheet có cấu trúc Dashboard của Report Leader không:
-    # (Có '10% business' trên dòng có nhiều cột dữ liệu)
-    is_dashboard = any(
-        "10% business" in clean_text(row[0]).lower() and len(row) > 5
-        for row in rows
-        if row
-    )
-
-    if is_dashboard:
-        dashboard_res = _parse_report_dashboard(rows)
-        results.update(dashboard_res)
-        return results
-
-    # Danh sách các key đã được chuẩn hóa để đối chiếu
-    norm_sections = {normalize_text(sec): sec for sec in REPORT_SECTIONS}
-
-    # =========================================================================
-    # KIỂM TRA LAYOUT 1: CỘT A CHỨA TIÊU ĐỀ MỤC (DẠNG DÒNG)
-    # =========================================================================
-    matched_row_keys = 0
-    row_mapping: Dict[str, str] = {}
-    for row in rows:
-        if not row:
-            continue
-        first_cell = clean_text(row[0])
-        norm_first = normalize_text(first_cell)
-
-        # Kiểm tra xem ô đầu tiên có khớp với một trong các mục báo cáo không
-        for norm_sec, original_sec in norm_sections.items():
-            if norm_sec in norm_first or norm_first in norm_sec:
-                matched_row_keys += 1
-                # Lấy toàn bộ nội dung từ các cột tiếp theo
-                content_cells = [clean_text(c) for c in row[1:] if clean_text(c)]
-                row_mapping[original_sec] = "\n".join(content_cells)
-                break
-
-    if matched_row_keys >= 2:
-        # Nếu khớp từ 2 mục trở lên, xác nhận đây là Layout 1
-        results.update(row_mapping)
-        return results
-
-    # =========================================================================
-    # KIỂM TRA LAYOUT 2: TIÊU ĐỀ CỘT Ở DÒNG ĐẦU TIÊN (DẠNG BẢNG NGANG)
-    # =========================================================================
-    header_row = rows[0]
-    col_mapping: Dict[int, str] = {}
-    for col_idx, cell in enumerate(header_row):
-        norm_cell = normalize_text(cell)
-        for norm_sec, original_sec in norm_sections.items():
-            if norm_sec in norm_cell or norm_cell in norm_sec:
-                col_mapping[col_idx] = original_sec
-                break
-
-    if len(col_mapping) >= 2:
-        # Tìm dòng dữ liệu mới nhất (dòng cuối cùng có dữ liệu)
-        target_row = None
-        for row in reversed(rows[1:]):
-            if any(clean_text(c) for c in row):
-                target_row = row
-                break
-
-        if target_row:
-            for col_idx, sec_name in col_mapping.items():
-                if col_idx < len(target_row):
-                    results[sec_name] = clean_text(target_row[col_idx])
-        return results
-
-    # =========================================================================
-    # PHƯƠNG ÁN DỰ PHÒNG: DUYỆT TỰ DO TOÀN BỘ CÁC Ô TRONG SHEET
-    # =========================================================================
-    full_text = ""
-    for row in rows:
-        row_str = " ".join([clean_text(c) for c in row if clean_text(c)])
-        if row_str:
-            full_text += row_str + "\n"
-
-    for original_sec in REPORT_SECTIONS:
-        norm_sec = normalize_text(original_sec)
-        pattern = re.compile(
-            re.escape(original_sec) + r"\s*[:\-]?\s*(.*?)(?=(?:" + "|".join([re.escape(s) for s in REPORT_SECTIONS]) + r"|$))",
-            re.IGNORECASE | re.DOTALL,
-        )
-        match = pattern.search(full_text)
-        if match:
-            results[original_sec] = clean_text(match.group(1))
-
-    return results
-
-
-BLUE_STYLE = 'style="color: rgb(154, 184, 255); font-size: inherit;" data-original-highlight-color="rgb(30, 83, 163)"'
-ORANGE_STYLE = 'style="color: rgb(254, 131, 93); font-size: inherit;" data-original-highlight-color="rgb(205, 89, 55)"'
+from ..config import REPORT_SECTIONS
+from .constants import (
+    DOC_LINKS,
+    LINK_ATTRS,
+    BLUE_STYLE,
+    RED_STYLE,
+    ORANGE_STYLE,
+)
+from .utils import clean_text, normalize_text
+from .parsers import _parse_report_dashboard
 
 
 def compose_table_leader_report(rows: List[List[Any]]) -> tuple[str, str]:
@@ -494,14 +130,19 @@ def compose_table_leader_report(rows: List[List[Any]]) -> tuple[str, str]:
         f'<td>&nbsp;</td></tr>'
     )
 
-    # R7: - xử lý các phản hồi trên email, linkedin
-    r7_detail = cell(7, 1)
+    # R7: - xử lý các phản hồi trên email, linkedin (Màu đỏ chuẩn Ray: RED_STYLE)
+    r7_idx = 7
+    for r_check in range(1, min(15, len(rows))):
+        if "xử lý các phản hồi" in cell(r_check, 0).lower():
+            r7_idx = r_check
+            break
+    r7_detail = cell(r7_idx, 1)
     r7_lines = [
-        f'<span {ORANGE_STYLE}>{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
+        f'<span {RED_STYLE}>{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
         for l in r7_detail.splitlines()
         if l.strip()
     ]
-    r7_html = "<br>".join(r7_lines)
+    r7_html = "<br>".join(r7_lines) if r7_lines else "&nbsp;"
     t2_trs.append(
         f'<tr><td><a aria-label="Link - xử lý các phản hồi trên email, linkedin" href="{DOC_LINKS["xu_ly_phan_hoi"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- xử lý các phản hồi trên email, linkedin</u></span></a></td>'
         f'<td colspan="12" rowspan="1">{r7_html}</td>'
@@ -594,12 +235,23 @@ def compose_table_leader_report(rows: List[List[Any]]) -> tuple[str, str]:
         f'<td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
     )
 
-    # R8: Trả lời email
-    r18_val = cell(18, 1)
-    r18_span = f'<span {ORANGE_STYLE}>{r18_val}</span>' if r18_val else '&nbsp;'
+    # R8: Trả lời email (Màu đỏ chuẩn Ray: RED_STYLE)
+    r18_idx = 18
+    for r_check in range(11, min(25, len(rows))):
+        col0 = cell(r_check, 0).lower()
+        if "trả lời email" in col0 or "asssesment" in col0:
+            r18_idx = r_check
+            break
+    r18_val = cell(r18_idx, 1)
+    r18_lines = [
+        f'<span {RED_STYLE}>{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
+        for l in r18_val.splitlines()
+        if l.strip()
+    ]
+    r18_html = "<br>".join(r18_lines) if r18_lines else "&nbsp;"
     t3_trs.append(
         f'<tr><td><a aria-label="Link - Trả lời email được giới thiệu job, bài test/asssesment" href="{DOC_LINKS["feedback_job"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- Trả lời email được giới thiệu job, bài test/asssesment</u></span></a></td>'
-        f'<td colspan="8" rowspan="1">{r18_span}</td></tr>'
+        f'<td colspan="8" rowspan="1">{r18_html}</td></tr>'
     )
     table_3 = f'<table data-is-focusable="true"><tbody>{"".join(t3_trs)}</tbody></table>'
 
@@ -729,35 +381,6 @@ def compose_table_leader_report(rows: List[List[Any]]) -> tuple[str, str]:
     text_report = compose_leader_report(dashboard_res)
 
     return html_report, text_report
-
-
-def compose_full_single_message(
-    template_rows: List[List[Any]], report_rows: List[List[Any]]
-) -> tuple[str, str]:
-    """
-    Gom toàn bộ nội dung thành 1 tin nhắn duy nhất chuẩn 100% cấu trúc Ray (nhóm gbBOSS):
-      - Table 0: Template
-      - Table 1: Tổng thể
-      - Table 2: 10% Business
-      - Table 3: 80%+ job Cali
-      - Table 4: TTS /Volunteer
-      - Table 5: NIW
-      - Table 6: Đăng bài
-    Trả về tuple (html_content, text_content).
-    """
-    html_template, text_template = compose_template_message(template_rows)
-    html_report, text_report = compose_table_leader_report(report_rows)
-
-    # Wrap each table in its own <div data-table-scroll-container="true"> separated by <p>&nbsp;</p>
-    # and outer <div dir="auto" class="fui-Primitive ___11tzqds f1oy3dpc f89hs3r fqtknz5 fyvcxda">
-    raw_tables = [html_template] + re.findall(r"<table.*?>.*?</table>", html_report, flags=re.DOTALL | re.IGNORECASE)
-    wrapped_tables = [f'<div data-table-scroll-container="true">{t}</div>' for t in raw_tables]
-    inner_content = "<p>&nbsp;</p>" + "<p>&nbsp;</p>".join(wrapped_tables) + "<p>&nbsp;</p>"
-    combined_html = f'<div dir="auto" class="fui-Primitive ___11tzqds f1oy3dpc f89hs3r fqtknz5 fyvcxda">{inner_content}</div>'
-
-    combined_text = f"{text_template}\n\n" + ("=" * 60) + f"\n\n{text_report}".strip()
-
-    return combined_html, combined_text
 
 
 def compose_leader_report(
