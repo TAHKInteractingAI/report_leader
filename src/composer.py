@@ -43,79 +43,63 @@ def parse_template_sheet(rows: List[List[Any]]) -> str:
     return "\n".join(lines).strip()
 
 
+DOC_LINKS = {
+    "xu_ly_phan_hoi": "https://docs.google.com/document/d/1eptdDdXD1e1Tz2xzR0kKgB_uNeAurwhKHB8b-1yUf9I/edit?tab=t.rteda6ijpm46",
+    "nop_jobs": "https://docs.google.com/spreadsheets/d/1vUcKAbDazlC_vFSjzty02Fdugu4Nw_jZsEG2k_wyxXY/edit?gid=1653216804#gid=1653216804",
+    "willing_job": "https://docs.google.com/document/d/1v15KFMxfk2v3eYyQOiJbL4sCE6RQa3Nuses_cxLnkzM/edit?tab=t.atun0hlffezr#heading=h.gpe024pkb62i",
+    "interview": "https://docs.google.com/document/d/1phoQJ7SWn8gEGsXq79afmuK8H5JCdsyzaPn_-H4PYBg/edit?tab=t.epjtewsrdzv4",
+    "feedback_job": "https://docs.google.com/document/d/1phoQJ7SWn8gEGsXq79afmuK8H5JCdsyzaPn_-H4PYBg/edit?tab=t.43t5jivli07x",
+    "ah": "https://docs.google.com/document/d/1JrZHfVV9GHnETvcLrN0GLvHKhp8O3N0efkV49wXyOjY/edit?tab=t.0#heading=h.cr5o8ciz9sfm",
+    "au": "https://docs.google.com/document/d/1muhs3g6cpgDTXyUtC9902AfjwYXM_M_Lhi6wJxyCEPo/edit?tab=t.a8v2tuy7i94k",
+    "sam_foundation": "https://docs.google.com/document/d/1uTXqOXJ7I8kiYz-0d6YuFLNBJUxwyr4gfRN_rHo1V4c/edit?usp=sharing",
+    "niw_citations": "https://docs.google.com/spreadsheets/d/1tV1h-pNtGBgq639ky7cdBjc3CTfoeJEKIakOjORePEM/edit?gid=1346338716#gid=1346338716",
+    "niw_notes": "https://docs.google.com/document/d/1__q1kkUZkmpXi1E5dDkbwzfir-HKTCQSYEU4Edz38k0/edit?tab=t.boxu2wiwp4xz#heading=h.j84em85ufx8",
+    "niw_linkedin": "https://docs.google.com/spreadsheets/d/163Ye0HpfriaBs7nPWpKZC5mY-nHgcZdIQh2sJMoDIuQ/edit?gid=1498442053#gid=1498442053",
+    "niw_case": "https://docs.google.com/document/d/1__q1kkUZkmpXi1E5dDkbwzfir-HKTCQSYEU4Edz38k0/edit?tab=t.boxu2wiwp4xz"
+}
+
+LINK_CLS = 'class="fui-Link ___1q1shib f2hkw1w f3rmtva f1ewtqcl fyind8e f1k6fduh f1w7gpdv fk6fouc fjoy568 figsok6 f1s184ao f1mk8lai fnbmjn9 f1o700av f13mvf36 f1cmlufx f9n3di6 f1ids18y f1tx3yz7 f1deo86v f1eh06m1 f1iescvh fhgqx19 f1olyrje f1p93eir f1nev41a f1h8hb77 f1lqvz6u f10aw75t fsle3fq f17ae5zn"'
+LINK_ATTRS = f'{LINK_CLS} rel="noopener noreferrer" target="_blank" tabindex="0" data-testid="atp-safelink"'
+BLUE_STYLE = 'style="color: rgb(154, 184, 255); font-size: inherit;" data-original-highlight-color="rgb(30, 83, 163)"'
+ORANGE_STYLE = 'style="color: rgb(254, 131, 93); font-size: inherit;" data-original-highlight-color="rgb(205, 89, 55)"'
+
+
 def compose_template_message(template_rows: List[List[Any]]) -> tuple[str, str]:
     """
-    Ráp nội dung từ sheet 'template' theo định dạng văn bản (Text / Paragraphs)
-    được căn chỉnh đẹp mắt, thụt lề rõ ràng, tách đoạn mạch lạc, có đường dẫn click được.
-    Trả về tuple (html_template, text_template).
+    Ráp nội dung từ sheet 'template' theo chuẩn cấu trúc 100% của Ray (nhóm gbBOSS):
+    Mỗi hàng là một dòng trong bảng Table 0 (data-is-focusable="true").
     """
     if not template_rows:
         return "", ""
 
-    raw_lines = []
-    for r in template_rows:
-        for c in r:
-            c_str = clean_text(c)
-            if not c_str:
-                continue
-            # Tách các dòng bên trong mỗi ô nếu có xuống dòng
-            for line in c_str.split("\n"):
-                line_str = line.strip()
-                if line_str:
-                    raw_lines.append(line_str)
-
-    html_lines = []
+    t0_trs = []
     text_lines = []
-
-    for l in raw_lines:
-        if l.startswith("---") or l.startswith("==="):
-            html_lines.append('<hr style="border: 0; border-top: 1px dashed #cbd5e1; margin: 10px 0;" />')
-            text_lines.append("----------------------------------------")
+    for r in template_rows:
+        row_txt = " ".join(clean_text(c) for c in r if clean_text(c))
+        if not row_txt:
+            t0_trs.append("<tr><td>&nbsp;</td></tr>")
+            text_lines.append("")
             continue
 
-        # An toàn ký tự HTML
-        safe_l = (
-            l.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
-        url_pattern = re.compile(r'(https?://[^\s<]+)')
-        safe_l = url_pattern.sub(r'<a href="\1" style="color: #2563eb; text-decoration: underline;">\1</a>', safe_l)
+        text_lines.append(row_txt)
+        parts = []
+        for line in row_txt.split("\n"):
+            line_str = (
+                line.strip()
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            line_str = re.sub(r'(https?://[^\s<]+)', f'<a aria-label="Link \\1" href="\\1" {LINK_ATTRS}>\\1</a>', line_str)
+            if line_str:
+                parts.append(f'<span style="font-size: inherit;">{line_str}</span>')
+        inner = "<br>".join(parts)
+        t0_trs.append(f"<tr><td>{inner}</td></tr>")
 
-        if l.startswith("+ vd") or l.startswith("vd:"):
-            html_lines.append(f'<div style="margin: 2px 0 2px 28px; color: #475569; font-style: italic; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        elif l.startswith("+ "):
-            html_lines.append(f'<div style="margin: 2px 0 2px 24px; color: #334155; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        elif l.startswith("- "):
-            html_lines.append(f'<div style="margin: 3px 0 3px 12px; color: #1e293b; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        elif re.match(r"^\d+%\s+", l):
-            html_lines.append(f'<div style="margin: 2px 0 2px 24px; color: #334155; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        elif re.match(r"^\d+\.\s*WIN", l):
-            html_lines.append(f'<div style="margin: 8px 0 3px 0; font-weight: normal; color: #1e293b; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        elif "iHugeFreeEcosystemMoneyEvent" in l:
-            html_lines.append(f'<div style="background-color: #f8fafc; border-left: 3px solid #6366f1; padding: 6px 10px; margin: 8px 0; font-size: 13px; color: #1e293b; line-height: 1.5;">{safe_l}</div>')
-            text_lines.append(l)
-        elif l.startswith("*") and l.endswith("*"):
-            html_lines.append(f'<div style="margin: 10px 0 4px 0; color: #0f172a; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
-        else:
-            html_lines.append(f'<div style="margin: 4px 0; line-height: 1.55;">{safe_l}</div>')
-            text_lines.append(l)
+    html_template = f'<table data-is-focusable="true"><tbody>{"".join(t0_trs)}</tbody></table>'
+    text_template = "\n".join(text_lines)
 
-    full_tmpl_html = (
-        '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif; '
-        'font-size: 13px; color: #1f2937; margin-bottom: 16px;">\n'
-        + "\n".join(html_lines)
-        + "\n</div>"
-    )
-    full_tmpl_text = "\n".join(text_lines)
-
-    return full_tmpl_html, full_tmpl_text
+    return html_template, text_template
 
 
 def _parse_report_dashboard(rows: List[List[Any]]) -> Dict[str, str]:
@@ -391,168 +375,354 @@ def parse_report_sheet(rows: List[List[Any]]) -> Dict[str, str]:
     return results
 
 
+BLUE_STYLE = 'style="color: rgb(154, 184, 255); font-size: inherit;" data-original-highlight-color="rgb(30, 83, 163)"'
+ORANGE_STYLE = 'style="color: rgb(254, 131, 93); font-size: inherit;" data-original-highlight-color="rgb(205, 89, 55)"'
+
+
 def compose_table_leader_report(rows: List[List[Any]]) -> tuple[str, str]:
     """
-    Ráp báo cáo theo bố cục bảng (Table Grid) và gom toàn bộ vào 1 tin nhắn duy nhất.
-    Trả về tuple: (html_content, text_content)
-    
-    Đặc điểm:
-      - Bố cục table HTML với border mảnh (#d1d5db) theo chuẩn giao diện Microsoft Teams.
-      - Giữ nguyên các phần: Tổng thể, 10% Business, 80%+ job Cali, TTS /Volunteer,
-        NIW: Citations for papers NIW's note - Xoắn nện, TAHK Foundation, Đăng bài.
-      - Lọc trùng link Threads.
-      - Tiêu đề gọn gàng, không dùng in đậm markdown (**) hay emoji rườm rà.
+    Ráp báo cáo theo chuẩn 100% cấu trúc của Ray trong nhóm gbBOSS:
+    Bao gồm 6 bảng Table (Tổng thể, 10% Business, 80%+ Job Cali, TTS/Volunteer, NIW, Đăng bài)
+    với đầy đủ các liên kết Google Docs / Spreadsheets tương ứng.
     """
     def cell(r: int, c: int) -> str:
         if 0 <= r < len(rows) and 0 <= c < len(rows[r]):
             return clean_text(rows[r][c])
         return ""
 
-    td = "border: 1px solid #d1d5db; padding: 4px 8px; vertical-align: top;"
-    th = "border: 1px solid #d1d5db; padding: 4px 8px; background-color: #f3f4f6; text-align: left; font-weight: normal; vertical-align: top;"
-    tbl = "border-collapse: collapse; width: 100%; border: 1px solid #d1d5db; margin-bottom: 12px; font-size: 13px;"
-
-    # 1. TỔNG THỂ (DẠNG TABLE)
+    # =========================================================================
+    # TABLE 1: TỔNG THỂ (Chuẩn xác Ray: 1 ô td rowspan="1", phân tách bằng <br>)
+    # =========================================================================
     raw_tt = ""
     for r in range(len(rows)):
         for c in range(len(rows[r])):
             v = cell(r, c)
             if v.lower().startswith("tổng thể:") and len(v) > 20:
-                raw_tt += v.replace("Tổng thể:", "").replace("tổng thể:", "").strip() + "\n"
-
-    for r in range(len(rows)):
-        if cell(r, 0).lower() == "tổng thể":
-            for sub_r in range(r + 1, len(rows)):
-                line = [cell(sub_r, c) for c in range(10) if cell(sub_r, c)]
-                if line:
-                    raw_tt += " - " + " | ".join(line).lstrip("- ") + "\n"
+                raw_tt = v.replace("Tổng thể:", "").replace("tổng thể:", "").strip()
+                break
+        if raw_tt:
             break
 
-    tt_rows = []
-    for line in raw_tt.splitlines():
-        line = line.strip()
-        if not line:
+    tt_paragraphs = []
+    for p in raw_tt.split("\n\n"):
+        p = p.strip()
+        if not p:
             continue
-        if line.startswith("- ") or line.startswith("+ "):
-            bullet_text = line.lstrip("-+ ").strip()
-            if ":" in bullet_text and len(bullet_text.split(":", 1)[0]) < 30:
-                topic, detail = bullet_text.split(":", 1)
-                tt_rows.append((topic.strip(), detail.strip()))
-            else:
-                tt_rows.append(("-", bullet_text))
-        else:
-            if tt_rows:
-                last_top, last_det = tt_rows[-1]
-                tt_rows[-1] = (last_top, last_det + "\n" + line)
-            else:
-                tt_rows.append(("-", line))
-
-    tt_html = f'<table border="1" style="{tbl}">'
-    tt_html += f'<tr><th style="{th}; width: 25%;">Tổng thể</th><th style="{th}">Chi tiết / Tiến độ</th></tr>'
-    for top, det in tt_rows:
-        tt_html += f'<tr><td style="{td}">{top}</td><td style="{td}; white-space: pre-wrap;">{det}</td></tr>'
-    tt_html += "</table>"
-
-    # 2. 10% BUSINESS
-    b_html = f'<p style="margin: 0 0 4px 0;">10% Business (50% direct và MLL)</p><table border="1" style="{tbl}">'
-    header_cols = [cell(0, c) for c in range(14) if cell(0, c)]
-    if not header_cols:
-        header_cols = ["10% Business (50% direct và MLL)"]
-    b_html += "<tr>" + "".join(f'<th style="{th}">{h}</th>' for h in header_cols) + "</tr>"
-    for r in range(1, 9):
-        task = cell(r, 0)
-        if not task:
-            continue
-        if r == 7:
-            b_html += f'<tr><td style="{td}">{task}</td><td colspan="{max(1, len(header_cols)-1)}" style="{td}; white-space: pre-wrap;">{cell(r, 1)}</td></tr>'
-        elif r == 6:
-            b_html += (
-                f'<tr><td style="{td}">{task}</td>'
-                f'<td style="{td}">20</td>'
-                f'<td colspan="3" style="{td}">Sum email gửi báo giá: {cell(r, 5)}</td>'
-                f'<td colspan="4" style="{td}">Sum gửi báo giá linkedin: {cell(r, 8)}</td>'
-                f'<td colspan="4" style="{td}">Push Fundraising service: {cell(r, 12)}</td></tr>'
+        p_lines = []
+        for line in p.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            safe_l = (
+                line.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
             )
-        else:
-            vals = [cell(r, c) for c in range(1, len(header_cols))]
-            if not any(vals):
-                b_html += f'<tr><td colspan="{len(header_cols)}" style="{td}">{task}</td></tr>'
-            else:
-                b_html += f'<tr><td style="{td}">{task}</td>' + "".join(f'<td style="{td}">{v}</td>' for v in vals) + "</tr>"
-    b_html += "</table>"
+            safe_l = re.sub(
+                r'(https?://[^\s<]+)',
+                f'<a aria-label="Link \\1" href="\\1" {LINK_ATTRS}><span style="font-size: inherit;">\\1</span></a>',
+                safe_l
+            )
+            p_lines.append(f'<span style="font-size: inherit;">{safe_l}</span>')
+        tt_paragraphs.append("<br>".join(p_lines))
 
-    # 3. 80%+ JOB CALI
-    j_html = f'<p style="margin: 0 0 4px 0;">80%+ job Cali,US: $150k trở lên</p><table border="1" style="{tbl}">'
-    j_header = [cell(10, c) for c in range(9) if cell(10, c)]
-    if not j_header:
-        j_header = ["80%+ job Cali,US: $150k trở lên"]
-    j_html += "<tr>" + "".join(f'<th style="{th}">{h}</th>' for h in j_header) + "</tr>"
-    j_html += '<tr><td style="' + td + '">' + cell(11, 0) + '</td>' + "".join(f'<td style="{td}">{cell(11, c)}</td>' for c in range(1, 9)) + "</tr>"
-    j_html += '<tr><td style="' + td + '">' + cell(12, 0) + '</td>' + "".join(f'<td style="{td}">{cell(12, c)}</td>' for c in range(1, 9)) + "</tr>"
-    j_html += f'<tr><td colspan="9" style="{td}">{cell(13, 0)}</td></tr>'
-    j_html += "<tr>" + "".join(f'<th style="{th}">{cell(14, c)}</th>' for c in range(7)) + f'<td colspan="2" style="{td}"></td></tr>'
-    j_html += f'<tr><td style="{td}">{cell(15, 0)}</td><td style="{td}">{cell(15, 1)}</td><td style="{td}">{cell(15, 2)}</td><td colspan="6" style="{td}"></td></tr>'
-    j_html += f'<tr><td style="{td}">{cell(16, 0)}</td><td style="{td}">{cell(16, 1)}</td><td style="{td}">{cell(16, 2)}</td><td style="{td}">{cell(16, 3)}</td><td colspan="5" style="{td}"></td></tr>'
-    j_html += f'<tr><td style="{td}">{cell(17, 0)}</td><td style="{td}">{cell(17, 1)}</td><td colspan="7" style="{td}"></td></tr>'
-    j_html += f'<tr><td style="{td}">{cell(18, 0)}</td><td colspan="8" style="{td}">{cell(18, 1)}</td></tr>'
-    j_html += "</table>"
+    tt_inner = '<span style="font-size: inherit;">Tổng thể:&nbsp;</span><br>' + "<br><br>".join(tt_paragraphs)
+    table_1 = f'<table data-is-focusable="true"><tbody><tr><td rowspan="1">{tt_inner}</td></tr></tbody></table>'
 
-    # 4. TTS / VOLUNTEER
-    tts_html = f'<p style="margin: 0 0 4px 0;">TTS /Volunteer</p><table border="1" style="{tbl}">'
-    tts_header = [cell(10, c) for c in range(10, 18) if cell(10, c)]
-    if not tts_header:
-        tts_header = ["TTS /Volunteer", "Sáng", "Chiều", "Tối", "Tổng intern", "Tổng giờ làm"]
-    tts_html += "<tr>" + "".join(f'<th style="{th}">{h}</th>' for h in tts_header) + "</tr>"
-    for r in [11, 12, 13]:
-        row_vals = [cell(r, c) for c in range(10, 10 + len(tts_header))]
-        tts_html += "<tr>" + "".join(f'<td style="{td}">{v}</td>' for v in row_vals) + "</tr>"
-    tts_html += "</table>"
+    # =========================================================================
+    # TABLE 2: 10% BUSINESS (Chuẩn xác Ray)
+    # =========================================================================
+    header_cols = [
+        "10% Business (50% direct và MLL)", "Debt", "Fund", "Charity", "Internship",
+        "Headhunt", "Gen AI", "Volunteer", "Trading", "Data Center", "Coin", "Bank", "Bot", "NIW"
+    ]
+    t2_trs = []
+    # R0: Headers
+    h_tds = [f'<td><span style="font-size: inherit;"><strong>{header_cols[0]}</strong></span></td>']
+    for h in header_cols[1:]:
+        h_tds.append(f'<td><span style="font-size: inherit;">{h}</span></td>')
+    t2_trs.append(f'<tr>{"".join(h_tds)}</tr>')
 
-    # 5. NIW & XOẮN NỆN
-    niw_html = f'<p style="margin: 0 0 4px 0;">NIW: Citations for papers NIW\'s note - Xoắn nện</p><table border="1" style="{tbl}">'
-    niw_html += f'<tr><td style="{td}">{cell(21, 0)}</td><td style="{td}">{cell(21, 1)}</td><td style="{td}">{cell(21, 2)}</td><td style="{td}">{cell(21, 3)}</td><td style="{td}">{cell(21, 4)}</td><td style="{td}">{cell(21, 5)}</td><td style="{td}">{cell(21, 6)}</td></tr>'
-    niw_html += f'<tr><td style="{td}">{cell(22, 0)}</td><td style="{td}">{cell(22, 1)}</td><td colspan="5" style="{td}">{cell(22, 3)}</td></tr>'
-    niw_html += f'<tr><td colspan="7" style="{td}">{cell(23, 0)}</td></tr>'
-    niw_html += f'<tr><td style="{td}">{cell(24, 0)}</td><td colspan="6" style="{td}; white-space: pre-wrap;">{cell(24, 1)}</td></tr>'
-    niw_html += "</table>"
+    # R1: - gửi e-mail báo giá ISSale
+    r1_tds = [f'<td><span style="font-size: inherit;">{cell(1, 0)}</span></td>']
+    for c in range(1, 14):
+        val = cell(1, c) or "&nbsp;"
+        r1_tds.append(f'<td><span style="font-size: inherit;">{val}</span></td>' if val != "&nbsp;" else '<td>&nbsp;</td>')
+    t2_trs.append(f'<tr>{"".join(r1_tds)}</tr>')
 
-    # 6. TAHK FOUNDATION
-    tahk_html = f'<p style="margin: 0 0 4px 0;">TAHK Foundation</p><table border="1" style="{tbl}">'
-    tahk_html += f'<tr><td style="{td}">{cell(26, 0)}</td><td colspan="5" style="{td}"></td><td style="{td}">{cell(26, 7)}</td></tr>'
-    tahk_html += f'<tr><td colspan="7" style="{td}">{cell(27, 0)}</td></tr>'
-    tahk_html += f'<tr><td style="{td}">{cell(28, 0)}</td><td style="{td}">{cell(28, 1)}</td><td style="{td}"></td><td style="{td}">{cell(28, 3)}</td><td style="{td}">{cell(28, 4)}</td><td colspan="2" style="{td}"></td></tr>'
-    tahk_html += f'<tr><td style="{td}">{cell(29, 0)}</td><td style="{td}">{cell(29, 1)}</td><td style="{td}"></td><td style="{td}">{cell(29, 3)}</td><td colspan="3" style="{td}"></td></tr>'
-    tahk_html += "</table>"
+    # R2: - gửi e-mail báo giá ISSale 12-MLLs
+    r2_tds = [f'<td><span style="font-size: inherit;">{cell(2, 0)}&nbsp;&nbsp;</span></td>']
+    for c in range(1, 14):
+        val = cell(2, c) or "&nbsp;"
+        r2_tds.append(f'<td><span style="font-size: inherit;">{val}</span></td>' if val != "&nbsp;" else '<td>&nbsp;</td>')
+    t2_trs.append(f'<tr>{"".join(r2_tds)}</tr>')
 
-    # 7. ĐĂNG BÀI (DẠNG TABLE & TỰ ĐỘNG LỌC TRÙNG LINK THREADS)
-    seen_urls = set()
-    post_items = []
+    # R3: - gửi linkedin ISSale MLLs báo giá
+    r3_title = cell(3, 0).replace("báo giá", "").strip()
+    r3_tds = [f'<td><span style="font-size: inherit;">{r3_title}&nbsp; báo giá</span></td>']
+    for c in range(1, 14):
+        val = cell(3, c) or "0"
+        r3_tds.append(f'<td><span style="font-size: inherit;">{val}</span></td>')
+    t2_trs.append(f'<tr>{"".join(r3_tds)}</tr>')
+
+    # R4: - post tag báo giá ISSale MLLs Linkedin
+    r4_tds = [f'<td><span style="font-size: inherit;">{cell(4, 0)}</span></td>']
+    for c in range(1, 14):
+        r4_tds.append('<td>&nbsp;</td>')
+    t2_trs.append(f'<tr>{"".join(r4_tds)}</tr>')
+
+    # R5: - post tag báo giá ISSale MLLs Twitter
+    r5_tds = [f'<td><span style="font-size: inherit;">{cell(5, 0)}</span></td>']
+    for c in range(1, 14):
+        r5_tds.append('<td>&nbsp;</td>')
+    t2_trs.append(f'<tr>{"".join(r5_tds)}</tr>')
+
+    # R6: - connect linkedin
+    sum_email = cell(6, 5) or "3196"
+    sum_linkedin = cell(6, 8) or "0"
+    push_fund = cell(6, 12) or "0"
+    t2_trs.append(
+        f'<tr><td><span style="font-size: inherit;">- connect linkedin</span></td>'
+        f'<td><span style="font-size: inherit;">20</span></td>'
+        f'<td><span style="font-size: inherit;">Sum email gửi báo giá</span></td>'
+        f'<td>&nbsp;</td><td>&nbsp;</td>'
+        f'<td><span style="font-size: inherit;">{sum_email}</span></td>'
+        f'<td colspan="2" rowspan="1"><span style="font-size: inherit;">Sum gửi báo giá linkedin</span></td>'
+        f'<td><span style="font-size: inherit;">{sum_linkedin}</span></td>'
+        f'<td colspan="3" rowspan="1"><span style="font-size: inherit;">Push Fundraising service</span></td>'
+        f'<td><span style="font-size: inherit;">{push_fund}</span></td>'
+        f'<td>&nbsp;</td></tr>'
+    )
+
+    # R7: - xử lý các phản hồi trên email, linkedin
+    r7_detail = cell(7, 1)
+    r7_lines = [
+        f'<span {ORANGE_STYLE}>{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
+        for l in r7_detail.splitlines()
+        if l.strip()
+    ]
+    r7_html = "<br>".join(r7_lines)
+    t2_trs.append(
+        f'<tr><td><a aria-label="Link - xử lý các phản hồi trên email, linkedin" href="{DOC_LINKS["xu_ly_phan_hoi"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- xử lý các phản hồi trên email, linkedin</u></span></a></td>'
+        f'<td colspan="12" rowspan="1">{r7_html}</td>'
+        f'<td>&nbsp;</td></tr>'
+    )
+    table_2 = f'<table data-is-focusable="true"><tbody>{"".join(t2_trs)}</tbody></table>'
+
+    # =========================================================================
+    # TABLE 3: 80%+ JOB CALI (Chuẩn xác Ray)
+    # =========================================================================
+    t3_trs = []
+    # R0: Headers
+    t3_trs.append(
+        '<tr><td><span style="font-size: inherit;"><strong>80%+ job Cali,US: $150k trở lên</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>chief</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>manager</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>dưới.M</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>250+</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>200+</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>150+</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>SUM</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>chưa apply</strong></span></td></tr>'
+    )
+
+    # R1: - Nộp Jobs
+    nop_jobs_label = cell(11, 0).replace("Nộp Jobs", "").replace("-", "").strip()
+    r1_cols = [
+        f'<td><span style="font-size: inherit;">- </span><a aria-label="Link Nộp Jobs " href="{DOC_LINKS["nop_jobs"]}" {LINK_ATTRS}><span style="font-size: inherit;">Nộp Jobs </span></a><span style="font-size: inherit;">{nop_jobs_label}</span></td>'
+    ]
+    for c in range(1, 9):
+        r1_cols.append(f'<td><span style="font-size: inherit;">{cell(11, c)}</span></td>')
+    t3_trs.append(f'<tr>{"".join(r1_cols)}</tr>')
+
+    # R2: - Willing job
+    willing_label = cell(12, 0).replace("Willing job", "").replace("-", "").strip()
+    t3_trs.append(
+        f'<tr><td><a aria-label="Link - Willing job" href="{DOC_LINKS["willing_job"]}" {LINK_ATTRS}><span style="font-size: inherit;">- Willing job</span></a><span style="font-size: inherit;">{willing_label}</span></td>'
+        f'<td><span style="font-size: inherit;">Linkedin</span></td><td><span style="font-size: inherit;">{cell(12, 2)}</span></td>'
+        f'<td><span style="font-size: inherit;">Email</span></td><td><span style="font-size: inherit;">{cell(12, 4)}</span></td>'
+        f'<td><span style="font-size: inherit;">Push email</span></td><td><span style="font-size: inherit;">{cell(12, 6)}</span></td>'
+        f'<td><span style="font-size: inherit;">Push Linkedin</span></td><td><span style="font-size: inherit;">{cell(12, 8)}</span></td></tr>'
+    )
+
+    # R3: - Interview sắp đến:
+    iv_detail = cell(13, 0).replace("Interview sắp đến:", "").strip()
+    iv_lines = [
+        f'<span style="font-size: inherit;">{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
+        for l in iv_detail.splitlines()
+        if l.strip()
+    ]
+    iv_html = "<br>".join(iv_lines)
+    t3_trs.append(
+        f'<tr><td><a aria-label="Link - Interview sắp đến:" href="{DOC_LINKS["interview"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- Interview sắp đến:</u></span></a></td>'
+        f'<td colspan="8" rowspan="1">{iv_html}</td></tr>'
+    )
+
+    # R4: 75%ML / 25%iD
+    t3_trs.append(
+        '<tr><td><span style="font-size: inherit;"><strong>75%ML / 25%iD</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>US</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>Dubai</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>US đa quốc gia</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>PhD US</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>Riyadh</strong></span></td>'
+        '<td><span style="font-size: inherit;"><strong>Doha</strong></span></td>'
+        '<td>&nbsp;</td><td>&nbsp;</td></tr>'
+    )
+
+    # R5: Linkedin
+    t3_trs.append(
+        f'<tr><td><span style="font-size: inherit;"><strong>Linkedin</strong></span></td>'
+        f'<td><span style="font-size: inherit;">{cell(15, 1)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(15, 2)}</span></td>'
+        f'<td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    )
+
+    # R6: Email
+    t3_trs.append(
+        f'<tr><td><span style="font-size: inherit;"><strong>Email</strong></span></td>'
+        f'<td><span style="font-size: inherit;">{cell(16, 1)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(16, 2)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(16, 3)}</span></td>'
+        f'<td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    )
+
+    # R7: Submit form
+    t3_trs.append(
+        f'<tr><td><span style="font-size: inherit;"><strong>Submit form</strong></span></td>'
+        f'<td><span style="font-size: inherit;">{cell(17, 1)}</span></td>'
+        f'<td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    )
+
+    # R8: Trả lời email
+    r18_val = cell(18, 1)
+    r18_span = f'<span {ORANGE_STYLE}>{r18_val}</span>' if r18_val else '&nbsp;'
+    t3_trs.append(
+        f'<tr><td><a aria-label="Link - Trả lời email được giới thiệu job, bài test/asssesment" href="{DOC_LINKS["feedback_job"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- Trả lời email được giới thiệu job, bài test/asssesment</u></span></a></td>'
+        f'<td colspan="8" rowspan="1">{r18_span}</td></tr>'
+    )
+    table_3 = f'<table data-is-focusable="true"><tbody>{"".join(t3_trs)}</tbody></table>'
+
+    # =========================================================================
+    # TABLE 4: TTS / VOLUNTEER (Chuẩn xác Ray)
+    # =========================================================================
+    t4_trs = []
+    t4_trs.append(
+        '<tr><td><span style="font-size: inherit;"><strong>TTS /Volunteer</strong></span></td>'
+        '<td><span style="font-size: inherit;">Sáng</span></td>'
+        '<td><span style="font-size: inherit;">Chiều</span></td>'
+        '<td><span style="font-size: inherit;">Tối</span></td>'
+        '<td><span style="font-size: inherit;">Xử lý CV intern</span></td>'
+        '<td><span style="font-size: inherit;">Xử lý CV volunteer</span></td>'
+        '<td><span style="font-size: inherit;">Tổng intern</span></td>'
+        '<td><span style="font-size: inherit;">Tổng giờ làm</span></td></tr>'
+    )
+
+    # AH
+    t4_trs.append(
+        f'<tr><td><a aria-label="Link AH" href="{DOC_LINKS["ah"]}" {LINK_ATTRS}><span {BLUE_STYLE}><strong><u>AH</u></strong></span></a></td>'
+        f'<td><span style="font-size: inherit;">{cell(11, 11)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(11, 12)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(11, 13)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(11, 14)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(11, 15)}</span></td>'
+        f'<td colspan="1" rowspan="3"><span style="font-size: inherit;">{cell(11, 16)}</span></td>'
+        f'<td colspan="1" rowspan="3"><span style="font-size: inherit;">{cell(11, 17)}</span></td></tr>'
+    )
+    # AU
+    t4_trs.append(
+        f'<tr><td><a aria-label="Link AU" href="{DOC_LINKS["au"]}" {LINK_ATTRS}><span {BLUE_STYLE}><strong><u>AU</u></strong></span></a></td>'
+        f'<td><span style="font-size: inherit;">{cell(12, 11)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(12, 12)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(12, 13)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(12, 14)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(12, 15)}</span></td></tr>'
+    )
+    # SAM Foundation + QT
+    t4_trs.append(
+        f'<tr><td><a aria-label="Link SAM Foundation" href="{DOC_LINKS["sam_foundation"]}" {LINK_ATTRS}><span style="font-size: inherit;"><strong>SAM Foundation</strong></span></a><span style="font-size: inherit;"><strong> + QT</strong></span></td>'
+        f'<td><span style="font-size: inherit;">{cell(13, 11)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(13, 12)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(13, 13)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(13, 14)}</span></td>'
+        f'<td><span style="font-size: inherit;">{cell(13, 15)}</span></td></tr>'
+    )
+    table_4 = f'<table data-is-focusable="true"><tbody>{"".join(t4_trs)}</tbody></table>'
+
+    # =========================================================================
+    # TABLE 5: NIW (Chuẩn xác Ray)
+    # =========================================================================
+    t5_trs = []
+    # R0
+    t5_trs.append(
+        f'<tr><td colspan="7" rowspan="1"><span style="font-size: inherit;">NIW: </span>'
+        f'<a aria-label="Link Citations for papers" href="{DOC_LINKS["niw_citations"]}" {LINK_ATTRS}><span style="font-size: inherit;">Citations for papers</span></a>'
+        f'<span style="font-size: inherit;"> </span>'
+        f'<a aria-label="Link NIW\'s note - Xoắn nện" href="{DOC_LINKS["niw_notes"]}" {LINK_ATTRS}><span style="font-size: inherit;">NIW\'s note - Xoắn nện</span></a></td></tr>'
+    )
+    # R1: - Linkedin
+    t5_trs.append(
+        f'<tr><td><span style="font-size: inherit;">- </span><a aria-label="Link Linkedin" href="{DOC_LINKS["niw_linkedin"]}" {LINK_ATTRS}><span style="font-size: inherit;">Linkedin</span></a></td>'
+        f'<td><span style="font-size: inherit;">Connect</span></td><td><span style="font-size: inherit;">{cell(21, 2)}</span></td>'
+        f'<td><span style="font-size: inherit;">Reference</span></td><td><span style="font-size: inherit;">{cell(21, 4)}</span></td>'
+        f'<td><span style="font-size: inherit;">Push ref</span></td><td><span style="font-size: inherit;">{cell(21, 6)}</span></td></tr>'
+    )
+    # R2: - Email
+    t5_trs.append(
+        '<tr><td><span style="font-size: inherit;">- Email</span></td>'
+        '<td><span style="font-size: inherit;">Reference</span></td>'
+        '<td>&nbsp;</td>'
+        '<td><span style="font-size: inherit;">Push ref</span></td>'
+        '<td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+    )
+    # R3: - xử lý case
+    t5_trs.append(
+        f'<tr><td><a aria-label="Link - xử lý case" href="{DOC_LINKS["niw_case"]}" {LINK_ATTRS}><span {BLUE_STYLE}><u>- xử lý case</u></span></a></td>'
+        f'<td colspan="6" rowspan="1">&nbsp;</td></tr>'
+    )
+    # R4: - Hồ sơ Chen - WeGreen
+    chen_detail = cell(24, 1)
+    chen_lines = [
+        f'<span style="font-size: inherit;">{l.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</span>'
+        for l in chen_detail.splitlines()
+        if l.strip()
+    ]
+    chen_html = "<br>".join(chen_lines)
+    t5_trs.append(
+        f'<tr><td><span style="font-size: inherit;">- Hồ sơ Chen - WeGreen</span></td>'
+        f'<td colspan="6" rowspan="1">{chen_html}</td></tr>'
+    )
+    table_5 = f'<table data-is-focusable="true"><tbody>{"".join(t5_trs)}</tbody></table>'
+
+    # =========================================================================
+    # TABLE 6: ĐĂNG BÀI (Chuẩn xác Ray: bảng 1 cột)
+    # =========================================================================
+    t6_trs = ['<tr><td rowspan="1"><span style="font-size: inherit;"><strong>Đăng bài:</strong></span></td></tr>']
     for r in range(len(rows)):
         for c in range(len(rows[r])):
             v = cell(r, c)
             if "threads.com" in v:
                 u = v.strip()
-                if u not in seen_urls:
-                    seen_urls.add(u)
-                    handle = u.split("@")[-1].rstrip("/") if "@" in u else u
-                    post_items.append((handle, u))
+                handle = u.split("@")[-1].rstrip("/") if "@" in u else u
+                title = f"@{handle}"
+                if "auavago" in u:
+                    title = "AU-Avago Corp (@auavago_corp) • Threads, Say more"
+                elif "ahlongquan" in u:
+                    title = "AH-LongQuan Corporation (@ahlongquan.company) • Threads, Say more"
+                elif "sam.foundation.nonprofit" in u:
+                    title = "SAM Foundation Organization (@sam.foundation.nonprofit) • Threads,..."
+                elif "sam_foundation_official" in u:
+                    title = u
+                t6_trs.append(
+                    f'<tr><td rowspan="1"><a aria-label="Link {title}" href="{u}" {LINK_ATTRS}><span style="font-size: inherit;">{title}</span></a></td></tr>'
+                )
 
-    post_html = f'<table border="1" style="{tbl}">'
-    post_html += f'<tr><th style="{th}; width: 35%;">Đăng bài:</th><th style="{th}">Link bài đăng Threads</th></tr>'
-    for h, u in post_items:
-        post_html += f'<tr><td style="{td}">@{h}</td><td style="{td}"><a href="{u}">{u}</a></td></tr>'
-    post_html += "</table>"
+    table_6 = f'<table data-is-focusable="true"><tbody>{"".join(t6_trs)}</tbody></table>'
 
-    # GOM TOÀN BỘ BÁO CÁO VÀO 1 TIN NHẮN DUY NHẤT (100% CẤU TRÚC TABLE)
-    html_report = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #242424; line-height: 1.5;">
-  {tt_html}
-  {b_html}
-  {j_html}
-  {tts_html}
-  {niw_html}
-  {tahk_html}
-  {post_html}
-</div>""".strip()
+    # =========================================================================
+    # GOM TOÀN BỘ 6 BẢNG REPORT THÀNH HTML
+    # =========================================================================
+    html_report = f"{table_1}{table_2}{table_3}{table_4}{table_5}{table_6}"
 
     # Tạo bản plain-text tương ứng
     dashboard_res = _parse_report_dashboard(rows)
@@ -565,19 +735,25 @@ def compose_full_single_message(
     template_rows: List[List[Any]], report_rows: List[List[Any]]
 ) -> tuple[str, str]:
     """
-    Gom toàn bộ nội dung thành 1 tin nhắn duy nhất:
-      - Phần trên: Template (sheet 'template')
-      - Phần dưới: Report Leader (sheet 'report' - 100% bố cục Table)
+    Gom toàn bộ nội dung thành 1 tin nhắn duy nhất chuẩn 100% cấu trúc Ray (nhóm gbBOSS):
+      - Table 0: Template
+      - Table 1: Tổng thể
+      - Table 2: 10% Business
+      - Table 3: 80%+ job Cali
+      - Table 4: TTS /Volunteer
+      - Table 5: NIW
+      - Table 6: Đăng bài
     Trả về tuple (html_content, text_content).
     """
     html_template, text_template = compose_template_message(template_rows)
     html_report, text_report = compose_table_leader_report(report_rows)
 
-    combined_html = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #242424; line-height: 1.5;">
-  {html_template}
-  <hr style="border: none; border-top: 2px solid #e1dfdd; margin: 20px 0;" />
-  {html_report}
-</div>""".strip()
+    # Wrap each table in its own <div data-table-scroll-container="true"> separated by <p>&nbsp;</p>
+    # and outer <div dir="auto" class="fui-Primitive ___11tzqds f1oy3dpc f89hs3r fqtknz5 fyvcxda">
+    raw_tables = [html_template] + re.findall(r"<table.*?>.*?</table>", html_report, flags=re.DOTALL | re.IGNORECASE)
+    wrapped_tables = [f'<div data-table-scroll-container="true">{t}</div>' for t in raw_tables]
+    inner_content = "<p>&nbsp;</p>" + "<p>&nbsp;</p>".join(wrapped_tables) + "<p>&nbsp;</p>"
+    combined_html = f'<div dir="auto" class="fui-Primitive ___11tzqds f1oy3dpc f89hs3r fqtknz5 fyvcxda">{inner_content}</div>'
 
     combined_text = f"{text_template}\n\n" + ("=" * 60) + f"\n\n{text_report}".strip()
 
