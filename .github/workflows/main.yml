@@ -62,6 +62,12 @@ jobs:
           GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON || secrets.GOOGLE_CREDENTIALS }}
           TEAMS_EMAIL: ${{ secrets.TEAMS_EMAIL }}
           TEAMS_PASSWORD: ${{ secrets.TEAMS_PASSWORD }}
+          TEAMS_CHAT: ${{ secrets.TEAMS_CHAT || vars.TEAMS_CHAT || 'iX000s iSSale gbBOSS AH*AU*cOL*YeuCauTop-iUp*KTra' }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID || vars.SPREADSHEET_ID || '1ix1D8qMD6DYTsCWtxevoUfBde8FP2vx_UF_bmKzFBng' }}
+          TEMPLATE_SHEET_NAME: ${{ secrets.TEMPLATE_SHEET_NAME || vars.TEMPLATE_SHEET_NAME || 'template' }}
+          REPORT_SHEET_NAME: ${{ secrets.REPORT_SHEET_NAME || vars.REPORT_SHEET_NAME || 'report' }}
+          HEADLESS: "true"
+          PROXY_URL: ${{ secrets.PROXY_URL || vars.PROXY_URL }}
         run: |
           # Chờ ngẫu nhiên 3-10s để tránh nghẽn tải đúng đầu giờ
           sleep $((RANDOM % 7 + 3))
@@ -73,4 +79,5 @@ jobs:
         with:
           name: teams-screenshots
           path: ./*.png
+          if-no-files-found: ignore
           retention-days: 3
