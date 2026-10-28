@@ -1,6 +1,8 @@
 import time
+import re
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -32,17 +34,18 @@ def dismiss_teams_popups(driver):
         pass
 
     try:
-        # 2. Đóng banner thông báo / What's new / Dismiss
+        # 2. Đóng banner thông báo / What's new / Dismiss / Notifications
         close_banner_btns = driver.find_elements(
             By.XPATH,
             '//button[contains(@aria-label, "Dismiss") or contains(@aria-label, "Đóng") or contains(@aria-label, "Close") '
-            'or contains(., "Dismiss") or contains(., "Not now") or contains(., "Got it") or contains(., "Không phải lúc này")]',
+            'or contains(., "Dismiss") or contains(., "Not now") or contains(., "Got it") or contains(., "Không phải lúc này")] '
+            '| //div[contains(., "desktop notifications")]//button[contains(@aria-label, "Close") or contains(@aria-label, "Dismiss") or text()="X"]',
         )
         for btn in close_banner_btns:
             try:
                 if btn.is_displayed():
                     driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(1)
+                    time.sleep(0.5)
             except Exception:
                 pass
     except Exception:
@@ -73,6 +76,108 @@ def ensure_chat_tab(driver):
 
 
 # ==============================================================================
+# HỖ TRỢ XÁC THỰC KHUNG CHAT & SOẠN THẢO
+# ==============================================================================
+def get_chat_editor(driver, timeout: int = 20):
+    """
+    Tìm phần tử soạn thảo tin nhắn (CKEditor / contenteditable) đang hiển thị trong khung chat.
+    Loại trừ hoàn toàn ô tìm kiếm hoặc bộ lọc.
+    """
+    editor_xpaths = [
+        '//div[@data-tid="ckeditor-replyConversation"]//div[@contenteditable="true"]',
+        '//div[contains(@class, "ck-editor__editable")]',
+        '//div[@data-tid="ckeditor-replyConversation"]',
+        '//div[@data-tid="chat-pane-compose"]//div[@contenteditable="true"]',
+        '//div[@role="main"]//div[@contenteditable="true"]',
+        '//div[@contenteditable="true"]',
+    ]
+    start = time.time()
+    while time.time() - start < timeout:
+        for xpath in editor_xpaths:
+            try:
+                elements = driver.find_elements(By.XPATH, xpath)
+                for el in elements:
+                    if el.is_displayed():
+                        aria = (el.get_attribute("aria-label") or "").lower()
+                        placeholder = (el.get_attribute("placeholder") or "").lower()
+                        data_tid = (el.get_attribute("data-tid") or "").lower()
+                        # Bỏ qua ô search/filter
+                        if any(
+                            k in aria or k in placeholder or k in data_tid
+                            for k in ["search", "filter", "tìm kiếm", "lọc", "sticky-filter"]
+                        ):
+                            continue
+                        return el
+            except Exception:
+                pass
+        time.sleep(1)
+    return None
+
+
+def _activate_chat_item(driver, item_el) -> bool:
+    """Kích hoạt click và mở nhóm chat bằng nhiều phương thức kết hợp."""
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", item_el)
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+    # 1. Tìm phần tử con (span text, button, a) có thể click được bên trong
+    click_target = item_el
+    try:
+        sub_targets = item_el.find_elements(
+            By.XPATH,
+            './/span[string-length(normalize-space(text())) > 2] | .//button | .//a | .//*[@role="button"]'
+        )
+        if sub_targets:
+            click_target = sub_targets[0]
+    except Exception:
+        pass
+
+    # 2. Click phần cứng qua ActionChains (chuỗi sự kiện chuột thực)
+    clicked = False
+    try:
+        actions = ActionChains(driver)
+        actions.move_to_element(click_target).pause(0.2).click().perform()
+        clicked = True
+    except Exception:
+        pass
+
+    # 3. Native element click
+    if not clicked:
+        try:
+            click_target.click()
+            clicked = True
+        except Exception:
+            pass
+
+    # 4. JavaScript click trực tiếp lên cả phần tử con và phần tử cha
+    try:
+        driver.execute_script("""
+            const el = arguments[0];
+            const parent = arguments[1];
+            el.focus();
+            el.click();
+            if (parent && parent !== el) {
+                parent.click();
+            }
+        """, click_target, item_el)
+    except Exception:
+        pass
+
+    # 5. Gửi phím ENTER vào phần tử để kích hoạt (chuẩn WAI-ARIA Treeview)
+    try:
+        item_el.send_keys(Keys.ENTER)
+    except Exception:
+        try:
+            click_target.send_keys(Keys.ENTER)
+        except Exception:
+            pass
+
+    return True
+
+
+# ==============================================================================
 # GỬI TIN NHẮN
 # ==============================================================================
 def send_message(driver, message: str, html_content: str = None) -> bool:
@@ -82,22 +187,18 @@ def send_message(driver, message: str, html_content: str = None) -> bool:
     giúp giữ nguyên cấu trúc bảng và hoàn tất gửi 1 tin nhắn duy nhất tức thì.
     """
     try:
-        input_xpath = (
-            '//div[@contenteditable="true"] '
-            '| //div[@role="textbox"] '
-            '| //div[@data-tid="ckeditor-replyConversation"]'
-        )
-        message_box = WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.XPATH, input_xpath))
-        )
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block: 'center'});", message_box
-        )
-        time.sleep(1)
+        message_box = get_chat_editor(driver, timeout=20)
+        if not message_box:
+            raise RuntimeError("Không tìm thấy ô soạn thảo tin nhắn (CKEditor) trong khung chat!")
+
         try:
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'}); arguments[0].focus();", message_box
+            )
+            time.sleep(1)
             message_box.click()
         except Exception:
-            driver.execute_script("arguments[0].focus();", message_box)
+            pass
 
         inserted_html_successfully = False
 
@@ -171,21 +272,35 @@ def send_message(driver, message: str, html_content: str = None) -> bool:
         # Bấm nút gửi tin nhắn
         sent = False
         try:
-            send_btn = driver.find_elements(
+            send_btns = driver.find_elements(
                 By.XPATH,
                 '//button[@data-tid="chatPane-send-message-button"] '
                 '| //button[contains(@aria-label, "Send") or contains(@aria-label, "Gửi")]',
             )
-            for btn in send_btn:
+            for btn in send_btns:
                 if btn.is_displayed():
-                    driver.execute_script("arguments[0].click();", btn)
-                    sent = True
-                    break
+                    try:
+                        actions = ActionChains(driver)
+                        actions.move_to_element(btn).pause(0.2).click().perform()
+                        sent = True
+                        break
+                    except Exception:
+                        driver.execute_script("arguments[0].click();", btn)
+                        sent = True
+                        break
         except Exception:
             pass
 
         if not sent:
-            message_box.send_keys(Keys.ENTER)
+            try:
+                message_box.send_keys(Keys.ENTER)
+                sent = True
+            except Exception:
+                try:
+                    message_box.send_keys(Keys.CONTROL, Keys.ENTER)
+                    sent = True
+                except Exception:
+                    pass
 
         time.sleep(3)
         display_screenshot(driver, "after_sending_message.png")
@@ -206,6 +321,7 @@ def open_chat(driver, chat_name: str) -> bool:
     ensure_chat_tab(driver)
     dismiss_teams_popups(driver)
 
+    # 1. Thử tìm trong danh sách chat đang hiển thị sẵn
     chat_item_xpath = (
         '//*[contains(@data-tid, "chat-list-item") '
         'or contains(@data-tid, "chat-item") '
@@ -214,7 +330,6 @@ def open_chat(driver, chat_name: str) -> bool:
         'or @role="treeitem"]'
     )
 
-    # 1. Thử tìm trong danh sách chat đang hiển thị sẵn
     try:
         WebDriverWait(driver, 8).until(
             EC.presence_of_element_located((By.XPATH, chat_item_xpath))
@@ -231,36 +346,41 @@ def open_chat(driver, chat_name: str) -> bool:
                 continue
 
             txt = lines[0]
-            if not txt:
-                txt = g.get_attribute("aria-label") or ""
+            aria_label = g.get_attribute("aria-label") or ""
+            title_attr = g.get_attribute("title") or ""
+            target_str = (txt + " " + aria_label + " " + title_attr).lower()
 
-            if (
-                txt == chat_name
-                or chat_name.lower() in txt.lower()
-                or txt.lower() in chat_name.lower()
-                or chat_name.startswith(txt.replace("...", "").strip())
-            ):
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", g
-                )
-                time.sleep(1)
-                driver.execute_script("arguments[0].click();", g)
-                time.sleep(3)
-                WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            '//div[@contenteditable="true"] | //div[@role="textbox"] | //div[@data-tid="ckeditor-replyConversation"]',
-                        )
-                    )
-                )
-                display_screenshot(driver, "after_opening_chat.png")
-                print(f"📂 Đã mở đúng nhóm: {chat_name}")
-                return True
+            clean_chat_name = chat_name.lower().strip()
+            prefix = clean_chat_name[:15]
+            is_match = (
+                clean_chat_name in target_str
+                or txt.lower() in clean_chat_name
+                or clean_chat_name.startswith(txt.replace("...", "").strip().lower())
+                or prefix in target_str
+            )
+
+            if is_match:
+                print(f"👉 Tìm thấy nhóm trong danh sách: '{txt}'. Đang kích hoạt...")
+                _activate_chat_item(driver, g)
+
+                # Chờ editor xuất hiện trong khung chat
+                editor = get_chat_editor(driver, timeout=12)
+                if not editor:
+                    try:
+                        g.send_keys(Keys.ENTER)
+                    except Exception:
+                        pass
+                    editor = get_chat_editor(driver, timeout=8)
+
+                if editor:
+                    display_screenshot(driver, "after_opening_chat.png")
+                    print(f"📂 Đã mở đúng nhóm: {chat_name}")
+                    return True
+                else:
+                    print(f"⚠️ Đã click nhóm '{txt}' nhưng khung chat chưa nạp xong. Thử lại qua Filter...")
+                    break
     except Exception as e:
-        print(
-            f"ℹ️ Không thấy '{chat_name}' ở danh sách ngoài ({e}). Đang chuyển sang tìm bằng Filter..."
-        )
+        print(f"ℹ️ Quét danh sách ngoài ({e}). Đang chuyển sang tìm bằng Filter...")
 
     # 2. Mở nhóm bằng thanh Filter / Search
     try:
@@ -287,10 +407,14 @@ def open_chat(driver, chat_name: str) -> bool:
         search.click()
         search.send_keys(Keys.CONTROL + "a")
         search.send_keys(Keys.BACKSPACE)
-        # Sử dụng một phần từ khóa tên nhóm để tìm kiếm chính xác
-        search_keyword = chat_name.split()[0] if " " in chat_name else chat_name[:15]
+
+        # Trích xuất từ khóa tìm kiếm tốt nhất (ưu tiên từ khóa đặc trưng như gbBOSS nếu có)
+        tokens = [w for w in re.split(r'[\s*_\-]+', chat_name) if len(w) >= 3 and w.lower() not in ["ix000s", "issale"]]
+        search_keyword = tokens[0] if tokens else (chat_name.split()[0] if " " in chat_name else chat_name[:15])
+
+        print(f"🔍 Đang lọc danh sách với từ khóa: '{search_keyword}'...")
         search.send_keys(search_keyword)
-        time.sleep(4)
+        time.sleep(3)
 
         filtered_result_xpath = (
             f"//*[contains(@data-tid, 'chat-list-item') or contains(@data-tid, 'chat-item') or @role='listitem' or @role='treeitem'][.//*[contains(text(), '{search_keyword}')]] "
@@ -299,19 +423,22 @@ def open_chat(driver, chat_name: str) -> bool:
         filtered_result = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, filtered_result_xpath))
         )
-        driver.execute_script("arguments[0].click();", filtered_result)
-        time.sleep(3)
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    '//div[@contenteditable="true"] | //div[@role="textbox"] | //div[@data-tid="ckeditor-replyConversation"]',
-                )
-            )
-        )
-        display_screenshot(driver, "after_opening_chat.png")
-        print(f"📂 Đã mở nhóm qua thanh Filter: {chat_name}")
-        return True
+        _activate_chat_item(driver, filtered_result)
+
+        editor = get_chat_editor(driver, timeout=15)
+        if not editor:
+            try:
+                filtered_result.send_keys(Keys.ENTER)
+            except Exception:
+                pass
+            editor = get_chat_editor(driver, timeout=8)
+
+        if editor:
+            display_screenshot(driver, "after_opening_chat.png")
+            print(f"📂 Đã mở nhóm qua thanh Filter: {chat_name}")
+            return True
+
+        raise RuntimeError(f"Khung chat chưa sẵn sàng sau khi chọn nhóm qua filter '{search_keyword}'")
 
     except Exception as e:
         display_screenshot(driver, "open_chat_error.png")
