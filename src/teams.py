@@ -14,20 +14,22 @@ from .browser import get_driver, display_screenshot, save_screenshot
 # XỬ LÝ POPUP & ĐIỀU HƯỚNG TRÊN TEAMS
 # ==============================================================================
 def dismiss_teams_popups(driver):
-    """Tự động đóng các banner và popup làm phiền sau đăng nhập trên Teams."""
+    """Tự động đóng các banner, popup và xử lý chuyển tiếp sang web app trên Teams."""
     try:
-        # 1. Bấm nút 'Use the web app instead' nếu xuất hiện
-        use_web_btn = driver.find_elements(
+        # 1. Bấm nút 'Open Teams on the web' hoặc 'Use the web app instead' nếu xuất hiện
+        web_btns = driver.find_elements(
             By.XPATH,
-            '//a[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")] | '
-            '//button[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")]',
+            '//button[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")] | '
+            '//a[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")] | '
+            '//button[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")] | '
+            '//a[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")]',
         )
-        for btn in use_web_btn:
+        for btn in web_btns:
             try:
                 if btn.is_displayed():
                     driver.execute_script("arguments[0].click();", btn)
-                    print("👉 Đã bấm nút 'Use the web app instead'")
-                    time.sleep(1)
+                    print("👉 Đã bấm nút 'Open Teams on the web' / 'Use the web app'")
+                    time.sleep(2)
             except Exception:
                 pass
     except Exception:
@@ -589,20 +591,28 @@ def login(email: str = TEAMS_EMAIL, password: str = TEAMS_PASSWORD):
             except Exception:
                 pass
 
-            # Bấm nút 'Use the web app instead' nếu xuất hiện
+            # Xử lý màn hình "Personal accounts aren't supported yet in Teams"
             try:
-                use_web_btn = driver.find_elements(
-                    By.XPATH,
-                    '//a[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")] | '
-                    '//button[contains(text(), "Use the web app") or contains(text(), "Dùng ứng dụng web")]',
-                )
-                for btn in use_web_btn:
-                    if btn.is_displayed():
-                        driver.execute_script("arguments[0].click();", btn)
-                        print("👉 Đã bấm nút 'Use the web app instead'")
-                        time.sleep(2)
+                body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+                if "personal accounts aren't supported" in body_text or "personal accounts" in body_text:
+                    open_btns = driver.find_elements(
+                        By.XPATH,
+                        '//button[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")] | '
+                        '//a[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")]'
+                    )
+                    for b in open_btns:
+                        if b.is_displayed():
+                            driver.execute_script("arguments[0].click();", b)
+                            print("👉 Đã bấm nút 'Open Teams on the web' trên màn hình Personal accounts")
+                            time.sleep(3)
+                            break
+                    time.sleep(2)
+                    continue
             except Exception:
                 pass
+
+            # Đóng các banner, popup, và chuyển hướng web app nếu có
+            dismiss_teams_popups(driver)
 
             is_login_domain = any(
                 d in current_url
@@ -612,11 +622,16 @@ def login(email: str = TEAMS_EMAIL, password: str = TEAMS_PASSWORD):
                     "account.live.com",
                 )
             )
-            nav_items = driver.find_elements(
+
+            # Kiểm tra xem giao diện chính Teams (App bar Chat hoặc Tablist / Chat-item) đã xuất hiện chưa
+            chat_indicators = driver.find_elements(
                 By.XPATH,
-                '//button | //div[@role="button"] | //div[@role="tab"] | //div[@role="listitem"] | //*[@role="treeitem"]',
+                '//button[contains(@data-tid, "app-bar-chat") or contains(@aria-label, "Chat") or contains(@aria-label, "Trò chuyện")] '
+                '| //div[@role="tablist"] '
+                '| //div[contains(@data-tid, "chat-list-item") or contains(@data-tid, "chat-item")] '
+                '| //div[@data-tid="app-bar-chat"]'
             )
-            if len(nav_items) > 5 and not is_login_domain:
+            if chat_indicators and not is_login_domain:
                 print(
                     f"✅ Giao diện chính Teams đã sẵn sàng sau {int(time.time() - start_wait)} giây!"
                 )
