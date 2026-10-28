@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import time
+import shutil
 import platform
 import subprocess
 import re
@@ -127,8 +128,12 @@ def detect_browser():
             "/usr/bin/brave-browser",
             "google-chrome",
             "/usr/bin/google-chrome",
+            "google-chrome-stable",
+            "/usr/bin/google-chrome-stable",
             "chromium-browser",
+            "/usr/bin/chromium-browser",
             "chromium",
+            "/usr/bin/chromium",
         ])
     elif system == "Windows":
         candidates.extend([
@@ -143,19 +148,35 @@ def detect_browser():
     for path in candidates:
         if not path:
             continue
-        # Kiểm tra file tồn tại nếu là đường dẫn tuyệt đối
-        if os.path.isabs(path) and not os.path.exists(path):
+        # Chuyển đổi tên lệnh tương đối thành đường dẫn tuyệt đối qua PATH
+        abs_path = shutil.which(path) if not os.path.isabs(path) else path
+        if not abs_path or not os.path.exists(abs_path):
             continue
         try:
-            out = subprocess.check_output([path, "--version"], stderr=subprocess.DEVNULL).decode("utf-8")
+            real_path = os.path.realpath(abs_path)
+            out = subprocess.check_output([real_path, "--version"], stderr=subprocess.DEVNULL).decode("utf-8")
             match = re.search(r"(\d+)\.", out)
             if match:
                 version = int(match.group(1))
-                browser_name = "Brave Browser" if ("brave" in path.lower() or "brave" in out.lower()) else "Chrome"
-                print(f"✅ Đã tìm thấy {browser_name} tại: {path} (Major version: {version})")
-                return path, version
+                browser_name = "Brave Browser" if ("brave" in real_path.lower() or "brave" in out.lower()) else "Chrome"
+                print(f"✅ Đã tìm thấy {browser_name} tại: {real_path} (Major version: {version})")
+                return real_path, version
         except Exception:
             continue
+
+    # Thử tìm kiếm tự động qua cơ chế của undetected_chromedriver nếu chưa thấy
+    try:
+        uc_found = uc.find_chrome_executable()
+        if uc_found and os.path.exists(uc_found):
+            real_uc = os.path.realpath(uc_found)
+            out = subprocess.check_output([real_uc, "--version"], stderr=subprocess.DEVNULL).decode("utf-8")
+            match = re.search(r"(\d+)\.", out)
+            version = int(match.group(1)) if match else None
+            browser_name = "Brave Browser" if ("brave" in real_uc.lower() or "brave" in out.lower()) else "Chrome"
+            print(f"✅ Đã tìm thấy {browser_name} qua uc tại: {real_uc} (Major version: {version})")
+            return real_uc, version
+    except Exception:
+        pass
 
     return None, None
 
@@ -200,7 +221,7 @@ def get_driver():
     browser_path, browser_version = detect_browser()
 
     driver_kwargs = {"options": options}
-    if browser_path:
+    if browser_path and os.path.exists(browser_path):
         driver_kwargs["browser_executable_path"] = browser_path
         options.binary_location = browser_path
     if browser_version:
