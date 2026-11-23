@@ -1,3 +1,7 @@
+import os
+import json
+import zlib
+import base64
 import time
 import re
 from selenium.webdriver.common.by import By
@@ -451,205 +455,118 @@ def open_chat(driver, chat_name: str) -> bool:
 
 
 # ==============================================================================
-# ĐĂNG NHẬP TEAMS
+# ĐĂNG NHẬP TEAMS BẰNG SESSION
 # ==============================================================================
+def _load_session_data():
+    encoded = os.getenv("TEAMS_SESSION")
+    if not encoded and os.path.exists("teams_session.txt"):
+        with open("teams_session.txt", "r", encoding="utf-8") as f:
+            encoded = f.read().strip()
+    if not encoded:
+        return None
+    raw_bytes = zlib.decompress(base64.b64decode(encoded))
+    return json.loads(raw_bytes.decode("utf-8"))
+
+
 def login(email: str = TEAMS_EMAIL, password: str = TEAMS_PASSWORD):
-    """Đăng nhập tài khoản Microsoft Teams qua giao diện web."""
-    if not email or not password:
-        print("❌ Lỗi: TEAMS_EMAIL hoặc TEAMS_PASSWORD chưa được thiết lập!")
+    """Đăng nhập tài khoản Microsoft Teams bằng Session (Cookies + localStorage)."""
+    session_data = _load_session_data()
+    if not session_data:
+        print("❌ Không tìm thấy TEAMS_SESSION hoặc file teams_session.txt!")
         return None
 
     driver = None
     try:
         driver = get_driver()
-        driver.get("https://teams.microsoft.com/")
-        wait = WebDriverWait(driver, 30)
+        print("⏳ Đang nạp TEAMS_SESSION đăng nhập Microsoft Teams...")
 
-        print(f"⏳ Đang thực hiện đăng nhập tài khoản: {email}...")
+        driver.execute_cdp_cmd("Network.enable", {})
+        allowed_keys = {
+            "name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "expires", "priority"
+        }
+        clean_cookies = []
+        for c in session_data.get("cookies", []):
+            item = {k: v for k, v in c.items() if k in allowed_keys and v is not None}
+            if item.get("expires", 1) <= 0:
+                item.pop("expires", None)
+            clean_cookies.append(item)
 
-        # 1. Xử lý nút Sign in ban đầu
-        try:
-            sign_btn = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        '//button[contains(., "Sign in")] | //a[contains(., "Sign in")] | //button[contains(., "Đăng nhập")]',
-                    )
-                )
-            )
-            sign_btn.click()
-        except Exception:
-            pass
+        driver.execute_cdp_cmd("Network.setCookies", {"cookies": clean_cookies})
 
-        # 2. Ô nhập Email
-        email_box = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'input[type="email"], input[name="loginfmt"]')
-            )
-        )
-        email_box.send_keys(email)
-        email_box.send_keys(Keys.RETURN)
+        # Mở thẳng teams.live.com/v2/ cho tài khoản cá nhân
+        driver.get("https://teams.live.com/v2/")
         time.sleep(3)
 
-        # Xử lý trường hợp Microsoft đòi gửi mã xác thực -> ép chuyển về Password
+        local_storage = session_data.get("localStorage", {})
+        if local_storage:
+            for k, v in local_storage.items():
+                driver.execute_script(
+                    "window.localStorage.setItem(arguments[0], arguments[1]);", k, v
+                )
+            driver.get("https://teams.live.com/v2/")
+
+        # Nếu hiện nút Sign in ngoài trang Welcome -> bấm 1 cái kích hoạt SSO từ cookie
         try:
-            use_pass_btn = WebDriverWait(driver, 5).until(
+            sso_btn = WebDriverWait(driver, 6).until(
                 EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        '//*[contains(text(), "Use your password") or contains(text(), "Sử dụng mật khẩu")]',
-                    )
+                    (By.XPATH, '//button[contains(., "Sign in")] | //button[contains(., "Đăng nhập")]')
                 )
             )
-            use_pass_btn.click()
-            time.sleep(2)
+            print("🔄 Bấm Sign in để kích hoạt SSO từ cookie...")
+            sso_btn.click()
         except Exception:
             pass
 
-        # Xử lý màn hình "Sign in another way" -> Chọn Use your password
+        # Xử lý nếu Teams hiện lỗi tạm thời "Retry"
         try:
+            WebDriverWait(driver, 8).until(
+                EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "Retry")]'))
+            )
+            print("🔄 Phát hiện màn hình Retry, tải lại trang...")
             try:
-                other_ways_btn = WebDriverWait(driver, 4).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            '//*[contains(text(), "Other ways to sign in") or contains(text(), "Cách đăng nhập khác")]',
-                        )
-                    )
-                )
-                driver.execute_script("arguments[0].click();", other_ways_btn)
-                print("👉 Đã chọn: Other ways to sign in")
-                time.sleep(2)
+                driver.execute_script("window.location.replace('https://teams.live.com/v2/');")
             except Exception:
                 pass
-
-            use_pass_btn = WebDriverWait(driver, 6).until(
-                EC.presence_of_element_located(
-                    (
-                        By.XPATH,
-                        '//*[contains(text(), "Use your password") or contains(text(), "Sử dụng mật khẩu")]/ancestor::div[@role="button"] '
-                        '| //*[contains(text(), "Use your password") or contains(text(), "Sử dụng mật khẩu")]',
-                    )
-                )
-            )
-            driver.execute_script("arguments[0].click();", use_pass_btn)
-            print("👉 Đã kích hoạt: Use your password")
-            time.sleep(3)
-        except Exception as e:
-            print(f"ℹ️ Bước chuyển phương thức đăng nhập: {e}")
-
-        # 3. Ô nhập Password
-        pass_box = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'input[type="password"], input[name="passwd"]')
-            )
-        )
-        pass_box.send_keys(password)
-        pass_box.send_keys(Keys.RETURN)
-
-        # 4. Xử lý màn hình "Stay signed in?" -> Chọn No / Decline
-        try:
-            print("⏳ Đang xử lý màn hình Stay signed in...")
-            no_btn = WebDriverWait(driver, 15).until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        '//*[@id="declineButton"] | //*[@id="idBtn_Back"] | //*[@value="No"] | //button[contains(., "No")]',
-                    )
-                )
-            )
-            no_btn.click()
-            time.sleep(3)
         except Exception:
-            print("⚠️ Không thấy màn hình Stay signed in, tiếp tục...")
+            pass
 
-        print("✅ Đăng nhập tài khoản Microsoft thành công!")
-
-        # 5. Chờ giao diện chính Teams nạp xong
+        # Chờ giao diện chính Teams nạp xong (tối đa 75s)
         print("⏳ Đang chờ giao diện Teams nạp xong (tối đa 75s)...")
         start_wait = time.time()
         max_wait = 75
         while time.time() - start_wait < max_wait:
             current_url = (driver.current_url or "").lower()
-
-            # Kiểm tra xem có bị tạm khóa phiên (Try again later) không
-            try:
-                body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-                if (
-                    "try again later" in body_text
-                    or "can't sign you in right now" in body_text
-                ):
-                    save_screenshot(driver, "try_again_later_blocked.png")
-                    print(
-                        f"❌ Microsoft tạm khóa phiên đăng nhập (Try again later) tại: {driver.current_url}"
-                    )
-                    try:
-                        driver.quit()
-                    except Exception:
-                        pass
-                    return None
-            except Exception:
-                pass
-
-            # Xử lý màn hình "Personal accounts aren't supported yet in Teams"
-            try:
-                body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-                if "personal accounts aren't supported" in body_text or "personal accounts" in body_text:
-                    open_btns = driver.find_elements(
-                        By.XPATH,
-                        '//button[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")] | '
-                        '//a[contains(., "Open Teams on the web") or contains(., "Mở Teams trên web")]'
-                    )
-                    for b in open_btns:
-                        if b.is_displayed():
-                            driver.execute_script("arguments[0].click();", b)
-                            print("👉 Đã bấm nút 'Open Teams on the web' trên màn hình Personal accounts")
-                            time.sleep(3)
-                            break
-                    time.sleep(2)
-                    continue
-            except Exception:
-                pass
-
-            # Đóng các banner, popup, và chuyển hướng web app nếu có
             dismiss_teams_popups(driver)
 
             is_login_domain = any(
                 d in current_url
-                for d in (
-                    "login.microsoftonline.com",
-                    "login.live.com",
-                    "account.live.com",
-                )
+                for d in ("login.microsoftonline.com", "login.live.com", "account.live.com")
             )
 
-            # Kiểm tra xem giao diện chính Teams (App bar Chat hoặc Tablist / Chat-item) đã xuất hiện chưa
             chat_indicators = driver.find_elements(
                 By.XPATH,
                 '//button[contains(@data-tid, "app-bar-chat") or contains(@aria-label, "Chat") or contains(@aria-label, "Trò chuyện")] '
                 '| //div[@role="tablist"] '
                 '| //div[contains(@data-tid, "chat-list-item") or contains(@data-tid, "chat-item")] '
-                '| //div[@data-tid="app-bar-chat"]'
+                '| //div[@data-tid="app-bar-chat"] '
+                '| //*[@role="treeitem" or @role="listitem"]'
             )
             if chat_indicators and not is_login_domain:
-                print(
-                    f"✅ Giao diện chính Teams đã sẵn sàng sau {int(time.time() - start_wait)} giây!"
-                )
+                print(f"✅ Giao diện chính Teams đã sẵn sàng sau {int(time.time() - start_wait)} giây!")
                 dismiss_teams_popups(driver)
+                save_screenshot(driver, "after_login_success.png")
                 return driver
             time.sleep(3)
 
-        print(f"⚠️ Hết thời gian chờ {max_wait}s. URL hiện tại: {driver.current_url}")
-        dismiss_teams_popups(driver)
-        return driver
+        save_screenshot(driver, "login_timeout_error.png")
+        print(f"❌ Hết thời gian chờ {max_wait}s (có thể session đã hết hạn). URL hiện tại: {driver.current_url}")
+        driver.quit()
+        return None
 
     except Exception as e:
-        print(f"❌ Đăng nhập thất bại: {e}")
+        print(f"❌ Đăng nhập bằng Session thất bại: {e}")
         if driver:
-            try:
-                save_screenshot(driver, "login_error.png")
-            except Exception:
-                pass
+            save_screenshot(driver, "login_error.png")
             try:
                 driver.quit()
             except Exception:

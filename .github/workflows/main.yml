@@ -40,7 +40,7 @@ jobs:
       - name: Cài đặt Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Nâng cấp Google Chrome lên bản mới nhất
         run: |
@@ -60,6 +60,7 @@ jobs:
           GCP_SA_KEY: ${{ secrets.GOOGLE_CREDENTIALS }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON || secrets.GOOGLE_CREDENTIALS }}
+          TEAMS_SESSION: ${{ secrets.TEAMS_SESSION }}
           TEAMS_EMAIL: ${{ secrets.TEAMS_EMAIL }}
           TEAMS_PASSWORD: ${{ secrets.TEAMS_PASSWORD }}
           TEAMS_CHAT: ${{ secrets.TEAMS_CHAT || vars.TEAMS_CHAT || 'iX000s iSSale gbBOSS AH*AU*cOL*YeuCauTop-iUp*KTra' }}

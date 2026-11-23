@@ -148,7 +148,6 @@ def detect_browser():
     for path in candidates:
         if not path:
             continue
-        # Chuyển đổi tên lệnh tương đối thành đường dẫn tuyệt đối qua PATH
         abs_path = shutil.which(path) if not os.path.isabs(path) else path
         if not abs_path or not os.path.exists(abs_path):
             continue
@@ -164,7 +163,6 @@ def detect_browser():
         except Exception:
             continue
 
-    # Thử tìm kiếm tự động qua cơ chế của undetected_chromedriver nếu chưa thấy
     try:
         uc_found = uc.find_chrome_executable()
         if uc_found and os.path.exists(uc_found):
@@ -199,9 +197,6 @@ def get_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-default-browser-check")
-    options.add_argument("--disable-background-networking")
     options.add_argument("--window-size=1920,1080")
     options.page_load_strategy = "eager"
     options.add_argument("--lang=en-GB")
@@ -220,25 +215,25 @@ def get_driver():
     browser_path, browser_version = detect_browser()
 
     driver_kwargs = {"options": options}
-    if browser_path and os.path.exists(browser_path):
-        driver_kwargs["browser_executable_path"] = browser_path
-        options.binary_location = browser_path
-    if browser_version:
-        driver_kwargs["version_main"] = browser_version
+    local_driver = os.path.join(
+        os.environ.get("APPDATA", ""), "undetected_chromedriver", "undetected_chromedriver.exe"
+    )
+
+    if os.name == "nt" and os.path.exists(local_driver):
+        # Trên Windows local dùng đúng driver 157 đã có sẵn giống get_report.py
+        driver_kwargs["driver_executable_path"] = local_driver
+    else:
+        if browser_path and os.path.exists(browser_path):
+            driver_kwargs["browser_executable_path"] = browser_path
+            options.binary_location = browser_path
+        if browser_version:
+            driver_kwargs["version_main"] = browser_version
 
     try:
         driver = uc.Chrome(**driver_kwargs)
     except Exception as e:
         print(f"❌ Lỗi khi khởi động undetected_chromedriver: {e}")
         raise e
-
-    try:
-        driver.execute_cdp_cmd(
-            "Emulation.setTimezoneOverride",
-            {"timezoneId": "Asia/Ho_Chi_Minh"},
-        )
-    except Exception:
-        pass
 
     try:
         driver.execute_cdp_cmd(
